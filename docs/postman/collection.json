@@ -1,0 +1,371 @@
+{
+  "info": {
+    "_postman_id": "saas-subscriptions-api",
+    "name": "SaaS Subscriptions API",
+    "description": "Multi-tenant subscription billing with accrual accounting.\n\n**Setup:** Run collection folder \"1. Auth\" first — the login/register scripts save `access_token` automatically.\n\n**Demo (local):** `demo@acme.com` / `DemoPass123!` after `php artisan migrate --seed`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000/api/v1" },
+    { "key": "access_token", "value": "" },
+    { "key": "cron_secret", "value": "local-cron-secret" },
+    { "key": "plan_id", "value": "" },
+    { "key": "customer_id", "value": "" },
+    { "key": "subscription_id", "value": "" },
+    { "key": "invoice_id", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "0. Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Register Tenant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('access_token', json.data.token.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company_name\": \"Acme Corp\",\n  \"admin_name\": \"Jane Admin\",\n  \"email\": \"admin@acme.example\",\n  \"password\": \"SecurePass123!\",\n  \"timezone\": \"UTC\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register-tenant"
+          }
+        },
+        {
+          "name": "Login (Demo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('access_token', json.data.token.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo@acme.com\",\n  \"password\": \"DemoPass123!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Plans",
+      "item": [
+        {
+          "name": "List Plans",
+          "request": { "method": "GET", "url": "{{baseUrl}}/plans" }
+        },
+        {
+          "name": "Create Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('plan_id', pm.response.json().data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pro Monthly\",\n  \"price_cents\": 4999,\n  \"currency\": \"USD\",\n  \"billing_interval\": \"monthly\",\n  \"status\": \"active\"\n}"
+            },
+            "url": "{{baseUrl}}/plans"
+          }
+        },
+        {
+          "name": "Get Plan",
+          "request": { "method": "GET", "url": "{{baseUrl}}/plans/{{plan_id}}" }
+        },
+        {
+          "name": "Update Plan",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pro Monthly (Updated)\",\n  \"price_cents\": 5999\n}"
+            },
+            "url": "{{baseUrl}}/plans/{{plan_id}}"
+          }
+        },
+        {
+          "name": "Deactivate Plan",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/plans/{{plan_id}}" }
+        }
+      ]
+    },
+    {
+      "name": "3. Customers",
+      "item": [
+        {
+          "name": "List Customers",
+          "request": { "method": "GET", "url": "{{baseUrl}}/customers" }
+        },
+        {
+          "name": "Create Customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('customer_id', pm.response.json().data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Customer\",\n  \"email\": \"alice@customer.example\",\n  \"status\": \"active\"\n}"
+            },
+            "url": "{{baseUrl}}/customers"
+          }
+        },
+        {
+          "name": "Get Customer",
+          "request": { "method": "GET", "url": "{{baseUrl}}/customers/{{customer_id}}" }
+        }
+      ]
+    },
+    {
+      "name": "4. Subscriptions",
+      "item": [
+        {
+          "name": "Create Subscription",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('subscription_id', pm.response.json().data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_id\": \"{{customer_id}}\",\n  \"plan_id\": \"{{plan_id}}\",\n  \"start_date\": \"2025-01-01\",\n  \"auto_renew\": true\n}"
+            },
+            "url": "{{baseUrl}}/subscriptions"
+          }
+        },
+        {
+          "name": "List Subscriptions",
+          "request": { "method": "GET", "url": "{{baseUrl}}/subscriptions" }
+        },
+        {
+          "name": "Cancel (end of period)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancel_at_period_end\": true\n}"
+            },
+            "url": "{{baseUrl}}/subscriptions/{{subscription_id}}/cancel"
+          }
+        },
+        {
+          "name": "Delete Subscription",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/subscriptions/{{subscription_id}}"
+          }
+        },
+        {
+          "name": "Change Plan (501)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/subscriptions/{{subscription_id}}/change-plan"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Billing & Payments",
+      "item": [
+        {
+          "name": "Run Billing Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Cron-Secret", "value": "{{cron_secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"as_of\": \"2025-01-01T00:00:00Z\"\n}"
+            },
+            "url": "{{baseUrl}}/jobs/run-billing"
+          }
+        },
+        {
+          "name": "List Invoices",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.length > 0) {",
+                  "  pm.collectionVariables.set('invoice_id', json.data[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/invoices" }
+        },
+        {
+          "name": "Get Invoice",
+          "request": { "method": "GET", "url": "{{baseUrl}}/invoices/{{invoice_id}}" }
+        },
+        {
+          "name": "Record Payment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount_cents\": 4999,\n  \"client_idempotency_key\": \"pay-{{$guid}}\",\n  \"payment_method\": \"card\"\n}"
+            },
+            "url": "{{baseUrl}}/invoices/{{invoice_id}}/payments"
+          }
+        },
+        {
+          "name": "Run Revenue Recognition",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Cron-Secret", "value": "{{cron_secret}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"period_end\": \"2025-01-31\"\n}"
+            },
+            "url": "{{baseUrl}}/jobs/run-revenue-recognition"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Reports & Accounting",
+      "item": [
+        {
+          "name": "Chart of Accounts",
+          "request": { "method": "GET", "url": "{{baseUrl}}/accounts" }
+        },
+        {
+          "name": "Journal Entries",
+          "request": { "method": "GET", "url": "{{baseUrl}}/journal-entries" }
+        },
+        {
+          "name": "Income Statement",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/reports/income-statement?from=2025-01-01&to=2025-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "income-statement"],
+              "query": [
+                { "key": "from", "value": "2025-01-01" },
+                { "key": "to", "value": "2025-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Balance Sheet",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/reports/balance-sheet?as_of=2025-01-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "balance-sheet"],
+              "query": [{ "key": "as_of", "value": "2025-01-31" }]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

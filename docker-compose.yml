@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: saas_postgres
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-saas_subscriptions}
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      MIGRATE_USER: ${DB_MIGRATE_USERNAME:-migrate_user}
+      MIGRATE_PASSWORD: ${DB_MIGRATE_PASSWORD:-migrate_secret}
+      APP_USER: ${DB_USERNAME:-app_user}
+      APP_PASSWORD: ${DB_PASSWORD:-app_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d ${DB_DATABASE:-saas_subscriptions}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

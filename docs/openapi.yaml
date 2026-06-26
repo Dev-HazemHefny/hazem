@@ -1,0 +1,854 @@
+openapi: 3.0.3
+info:
+  title: SaaS Subscription Management API
+  description: |
+    Multi-tenant subscription billing with double-entry accounting (deferred revenue + revenue recognition).
+
+    **Authentication:** Bearer token from `/auth/register-tenant` or `/auth/login`.
+
+    **Response envelope:** `{ "success": true|false, "data"|"error": ..., "meta": { "request_id": "..." } }`
+
+    **Out of scope (MVP):** Mid-cycle plan changes return `501` on `POST /subscriptions/{id}/change-plan`.
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development
+  - url: /api/v1
+    description: Relative (same host)
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Plans
+  - name: Customers
+  - name: Subscriptions
+  - name: Invoices
+  - name: Payments
+  - name: Accounting
+  - name: Reports
+  - name: Jobs
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+
+  parameters:
+    PerPage:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 15
+
+  schemas:
+    ApiSuccess:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+        meta:
+          type: object
+          properties:
+            request_id:
+              type: string
+              format: uuid
+
+    ApiError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            code:
+              type: string
+        meta:
+          type: object
+
+    RegisterTenant:
+      type: object
+      required: [company_name, admin_name, email, password]
+      properties:
+        company_name:
+          type: string
+        admin_name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+        timezone:
+          type: string
+          example: UTC
+        currency:
+          type: string
+          example: USD
+
+    Login:
+      type: object
+      required: [tenant_slug, email, password]
+      properties:
+        tenant_slug:
+          type: string
+          description: Tenant slug from registration response
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    Plan:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price_cents:
+          type: integer
+        currency:
+          type: string
+        billing_interval:
+          type: string
+          enum: [monthly, yearly]
+        status:
+          type: string
+          enum: [active, inactive]
+
+    CreatePlan:
+      type: object
+      required: [name, price_cents, billing_interval]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price_cents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          default: USD
+        billing_interval:
+          type: string
+          enum: [monthly, yearly]
+        status:
+          type: string
+          enum: [active, inactive]
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive]
+
+    CreateCustomer:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        status:
+          type: string
+          enum: [active, inactive]
+        billing_address:
+          type: object
+
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, past_due, cancelled, expired]
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        auto_renew:
+          type: boolean
+        current_period_start:
+          type: string
+          format: date
+        current_period_end:
+          type: string
+          format: date
+        next_billing_at:
+          type: string
+          format: date-time
+
+    CreateSubscription:
+      type: object
+      required: [customer_id, plan_id, start_date]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        auto_renew:
+          type: boolean
+          default: true
+
+    CancelSubscription:
+      type: object
+      properties:
+        cancel_at_period_end:
+          type: boolean
+          default: true
+          description: true = cancel at period end; false = immediate cancellation
+
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_number:
+          type: string
+        status:
+          type: string
+          enum: [open, paid, void]
+        total_cents:
+          type: integer
+        amount_due_cents:
+          type: integer
+        amount_paid_cents:
+          type: integer
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+
+    RecordPayment:
+      type: object
+      required: [amount_cents, client_idempotency_key]
+      properties:
+        amount_cents:
+          type: integer
+          minimum: 1
+        client_idempotency_key:
+          type: string
+          maxLength: 255
+        payment_method:
+          type: string
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_id:
+          type: string
+          format: uuid
+        amount_cents:
+          type: integer
+        status:
+          type: string
+        paid_at:
+          type: string
+          format: date-time
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: System health check
+      responses:
+        '200':
+          description: Healthy or degraded
+        '503':
+          description: Unhealthy (database down)
+
+  /auth/register-tenant:
+    post:
+      tags: [Auth]
+      summary: Register a new tenant and admin user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterTenant'
+      responses:
+        '201':
+          description: Tenant created with access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccess'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and obtain access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+      responses:
+        '200':
+          description: Authenticated
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke current access token
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logged out
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user and tenant
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+
+  /plans:
+    get:
+      tags: [Plans]
+      summary: List subscription plans
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive]
+      responses:
+        '200':
+          description: Paginated plans
+    post:
+      tags: [Plans]
+      summary: Create a plan
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlan'
+      responses:
+        '201':
+          description: Plan created
+
+  /plans/{plan}:
+    get:
+      tags: [Plans]
+      summary: Get plan by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: plan
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Plan details
+    put:
+      tags: [Plans]
+      summary: Update plan
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: plan
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlan'
+      responses:
+        '200':
+          description: Plan updated
+    delete:
+      tags: [Plans]
+      summary: Deactivate plan (soft)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: plan
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Plan deactivated
+
+  /customers:
+    get:
+      tags: [Customers]
+      summary: List customers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated customers
+    post:
+      tags: [Customers]
+      summary: Create customer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomer'
+      responses:
+        '201':
+          description: Customer created
+
+  /customers/{customer}:
+    get:
+      tags: [Customers]
+      summary: Get customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customer
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Customer details
+    put:
+      tags: [Customers]
+      summary: Update customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customer
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomer'
+      responses:
+        '200':
+          description: Customer updated
+    delete:
+      tags: [Customers]
+      summary: Soft delete customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customer
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Customer deleted
+
+  /subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: List subscriptions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated subscriptions
+    post:
+      tags: [Subscriptions]
+      summary: Create subscription
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscription'
+      responses:
+        '201':
+          description: Subscription created
+
+  /subscriptions/{subscription}:
+    get:
+      tags: [Subscriptions]
+      summary: Get subscription
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subscription
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Subscription details
+    put:
+      tags: [Subscriptions]
+      summary: Update subscription
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subscription
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auto_renew:
+                  type: boolean
+                end_date:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: Subscription updated
+    delete:
+      tags: [Subscriptions]
+      summary: Delete subscription (soft delete)
+      description: Cancels active subscriptions and soft-deletes the record. Rejected when open invoices exist.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subscription
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Subscription deleted
+        '422':
+          description: Subscription has open invoices
+
+  /subscriptions/{subscription}/cancel:
+    post:
+      tags: [Subscriptions]
+      summary: Cancel subscription
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subscription
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelSubscription'
+      responses:
+        '200':
+          description: Subscription cancelled
+
+  /subscriptions/{subscription}/change-plan:
+    post:
+      tags: [Subscriptions]
+      summary: Change plan mid-cycle (not implemented)
+      description: Returns 501 — mid-cycle proration is out of MVP scope.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subscription
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '501':
+          description: Not implemented
+
+  /invoices:
+    get:
+      tags: [Invoices]
+      summary: List invoices
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated invoices
+
+  /invoices/{invoice}:
+    get:
+      tags: [Invoices]
+      summary: Get invoice with line items and payments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice details
+
+  /invoices/{invoice}/payments:
+    post:
+      tags: [Payments]
+      summary: Record payment against invoice
+      description: |
+        Supports partial and full payments. Overpayment is rejected.
+        Use `client_idempotency_key` for safe retries.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordPayment'
+      responses:
+        '201':
+          description: Payment recorded
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Payment'
+        '422':
+          description: Overpayment or validation error
+
+  /accounts:
+    get:
+      tags: [Accounting]
+      summary: Chart of accounts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Tenant accounts (1000 Cash, 1100 AR, 2100 Deferred, etc.)
+
+  /journal-entries:
+    get:
+      tags: [Accounting]
+      summary: List journal entries
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated journal entries with lines
+
+  /reports/income-statement:
+    get:
+      tags: [Reports]
+      summary: Income statement for date range
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Revenue totals by account
+
+  /reports/balance-sheet:
+    get:
+      tags: [Reports]
+      summary: Balance sheet as of date
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: as_of
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Assets, liabilities, equity with balanced flag
+
+  /jobs/run-billing:
+    post:
+      tags: [Jobs]
+      summary: Run billing cycle job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-Cron-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                as_of:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Billing stats (billed, skipped, failed)
+
+  /jobs/run-revenue-recognition:
+    post:
+      tags: [Jobs]
+      summary: Run revenue recognition job
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-Cron-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                period_end:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: Recognition stats (recognized, skipped, failed)

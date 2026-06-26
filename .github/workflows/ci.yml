@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test-sqlite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_pgsql, pdo_sqlite
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run tests (SQLite)
+        run: php artisan test
+
+  test-pgsql-rls:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: saas_subscriptions
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d saas_subscriptions"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_pgsql
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Initialize PostgreSQL roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -p 5433 -U postgres -d saas_subscriptions <<'EOSQL'
+          DO $$
+          BEGIN
+              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'migrate_user') THEN
+                  CREATE ROLE migrate_user LOGIN PASSWORD 'migrate_secret' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+              END IF;
+              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN
+                  CREATE ROLE app_user LOGIN PASSWORD 'app_secret' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+              END IF;
+          END
+          $$;
+          GRANT CONNECT ON DATABASE saas_subscriptions TO migrate_user;
+          GRANT CONNECT ON DATABASE saas_subscriptions TO app_user;
+          GRANT USAGE, CREATE ON SCHEMA public TO migrate_user;
+          GRANT USAGE ON SCHEMA public TO app_user;
+          EOSQL
+
+      - name: Run migrations
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5433
+          DB_DATABASE: saas_subscriptions
+          DB_USERNAME: app_user
+          DB_PASSWORD: app_secret
+          DB_MIGRATE_USERNAME: migrate_user
+          DB_MIGRATE_PASSWORD: migrate_secret
+        run: php artisan migrate --force
+
+      - name: Run full PostgreSQL test suite
+        run: vendor/bin/phpunit --configuration phpunit.pgsql.xml
