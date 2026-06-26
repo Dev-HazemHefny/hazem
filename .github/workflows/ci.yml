@@ -8,24 +8,31 @@ on:
 jobs:
   test-sqlite:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: "8.3"
           extensions: pdo_pgsql, pdo_sqlite
           coverage: none
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
+      - name: Prepare Laravel
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
       - name: Run tests (SQLite)
         run: php artisan test
 
   test-pgsql-rls:
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -47,12 +54,17 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: "8.3"
           extensions: pdo_pgsql
           coverage: none
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
+
+      - name: Prepare Laravel
+        run: |
+          cp .env.example .env
+          php artisan key:generate
 
       - name: Initialize PostgreSQL roles
         env:
@@ -64,13 +76,16 @@ jobs:
               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'migrate_user') THEN
                   CREATE ROLE migrate_user LOGIN PASSWORD 'migrate_secret' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
               END IF;
+
               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN
                   CREATE ROLE app_user LOGIN PASSWORD 'app_secret' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
               END IF;
           END
           $$;
+
           GRANT CONNECT ON DATABASE saas_subscriptions TO migrate_user;
           GRANT CONNECT ON DATABASE saas_subscriptions TO app_user;
+
           GRANT USAGE, CREATE ON SCHEMA public TO migrate_user;
           GRANT USAGE ON SCHEMA public TO app_user;
           EOSQL
