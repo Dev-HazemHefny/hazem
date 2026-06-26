@@ -55,7 +55,9 @@ class InvoiceService
                 $subscription->current_period_end->toDateString(),
             );
 
-            $existing = Invoice::where('billing_idempotency_key', $idempotencyKey)->first();
+            $existing = Invoice::where('billing_idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->first();
             if ($existing) {
                 return $existing;
             }
@@ -65,7 +67,7 @@ class InvoiceService
             $invoiceNumber = $this->allocateInvoiceNumber(TenantContext::id());
 
             $plan = $subscription->plan;
-            $totalCents = $plan->price_cents;
+            $totalCents = $subscription->price_cents ?? $plan->price_cents;
 
             $invoice = Invoice::create([
                 'subscription_id' => $subscription->id,
@@ -154,17 +156,18 @@ class InvoiceService
             $issuedAt = CarbonImmutable::now('UTC');
             $dueAt = $this->timezoneService->calculateDueAt($issuedAt);
             $invoiceNumber = $this->allocateInvoiceNumber(TenantContext::id());
+            $isCreditMemo = $netAmount < 0;
 
             $invoice = Invoice::create([
                 'subscription_id' => $subscription->id,
                 'customer_id' => $subscription->customer_id,
                 'invoice_number' => $invoiceNumber,
-                'status' => InvoiceStatus::Open,
+                'status' => $isCreditMemo ? InvoiceStatus::CreditMemo : InvoiceStatus::Open,
                 'subtotal_cents' => $netAmount,
                 'tax_cents' => 0,
                 'total_cents' => $netAmount,
                 'amount_paid_cents' => 0,
-                'amount_due_cents' => $netAmount,
+                'amount_due_cents' => $isCreditMemo ? 0 : $netAmount,
                 'period_start' => $effectiveDate->toDateString(),
                 'period_end' => $subscription->current_period_end,
                 'issued_at' => $issuedAt,

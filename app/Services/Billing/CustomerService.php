@@ -60,7 +60,11 @@ class CustomerService
             }
 
             $hasOpenInvoices = Invoice::where('customer_id', $customer->id)
-                ->whereIn('status', [InvoiceStatus::Open, InvoiceStatus::PartiallyPaid])
+                ->whereIn('status', [
+                    InvoiceStatus::Open,
+                    InvoiceStatus::PartiallyPaid,
+                    InvoiceStatus::Overdue,
+                ])
                 ->exists();
 
             if ($hasOpenInvoices) {

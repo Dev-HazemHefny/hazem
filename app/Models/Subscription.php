@@ -22,6 +22,8 @@ class Subscription extends Model
         'tenant_id',
         'customer_id',
         'plan_id',
+        'price_cents',
+        'billing_interval',
         'status',
         'start_date',
         'end_date',
@@ -46,6 +48,7 @@ class Subscription extends Model
             'deleted_at' => 'datetime',
             'auto_renew' => 'boolean',
             'cancel_at_period_end' => 'boolean',
+            'price_cents' => 'integer',
         ];
     }
 

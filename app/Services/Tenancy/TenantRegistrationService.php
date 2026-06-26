@@ -31,7 +31,7 @@ class TenantRegistrationService
         return DB::transaction(function () use ($data) {
             $timezone = $data['timezone'] ?? 'UTC';
 
-            $tenant = Tenant::create([
+            $tenant = $this->createTenant([
                 'name' => $data['company_name'],
                 'slug' => $this->generateUniqueSlug($data['company_name']),
                 'status' => TenantStatus::Active,
@@ -85,11 +85,31 @@ class TenantRegistrationService
         $slug = $base;
         $counter = 1;
 
-        while (Tenant::where('slug', $slug)->exists()) {
+        while ($this->tenantSlugExists($slug)) {
             $slug = $base.'-'.$counter;
             $counter++;
         }
 
         return $slug;
+    }
+
+    private function tenantSlugExists(string $slug): bool
+    {
+        $connection = config('database.default') === 'pgsql' ? 'pgsql_migrate' : null;
+        $query = $connection ? Tenant::on($connection) : Tenant::query();
+
+        return $query->where('slug', $slug)->exists();
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function createTenant(array $attributes): Tenant
+    {
+        $connection = config('database.default') === 'pgsql' ? 'pgsql_migrate' : null;
+
+        return $connection
+            ? Tenant::on($connection)->create($attributes)
+            : Tenant::create($attributes);
     }
 }

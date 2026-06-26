@@ -141,6 +141,63 @@ class PlanChangeTest extends TestCase
         });
     }
 
+    public function test_mid_cycle_downgrade_creates_credit_memo_without_payment(): void
+    {
+        $data = $this->registerTenant();
+        $tenantId = $data['tenant']['id'];
+        $subscriptionId = null;
+        $basicPlanId = null;
+
+        TenantContext::runAs($tenantId, function () use (&$subscriptionId, &$basicPlanId, $tenantId) {
+            $premium = SubscriptionPlan::create([
+                'tenant_id' => $tenantId,
+                'name' => 'Premium',
+                'price_cents' => 30000,
+                'billing_interval' => 'monthly',
+                'status' => 'active',
+            ]);
+            $basic = SubscriptionPlan::create([
+                'tenant_id' => $tenantId,
+                'name' => 'Basic',
+                'price_cents' => 10000,
+                'billing_interval' => 'monthly',
+                'status' => 'active',
+            ]);
+            $basicPlanId = $basic->id;
+
+            $customer = Customer::create(['name' => 'Downgrade', 'email' => 'downgrade@test.com', 'status' => 'active']);
+            $subscription = Subscription::create([
+                'tenant_id' => $tenantId,
+                'customer_id' => $customer->id,
+                'plan_id' => $premium->id,
+                'price_cents' => 30000,
+                'billing_interval' => 'monthly',
+                'status' => SubscriptionStatus::Active,
+                'start_date' => '2025-01-01',
+                'auto_renew' => true,
+                'current_period_start' => '2025-01-01',
+                'current_period_end' => '2025-01-31',
+                'next_billing_at' => CarbonImmutable::parse('2025-01-01'),
+            ]);
+            $subscriptionId = $subscription->id;
+
+            app(BillingCycleService::class)->billSubscription($subscription);
+        });
+
+        $this->postJson("/api/v1/subscriptions/{$subscriptionId}/change-plan", [
+            'plan_id' => $basicPlanId,
+            'effective_date' => '2025-01-16',
+        ], $this->authHeaders())->assertOk();
+
+        TenantContext::runAs($tenantId, function () {
+            $creditMemo = Invoice::where('status', 'credit_memo')->first();
+            $this->assertNotNull($creditMemo);
+            $this->assertLessThan(0, $creditMemo->total_cents);
+            $this->assertSame(0, $creditMemo->amount_due_cents);
+            $this->assertNotNull($creditMemo->journal_entry_id);
+        });
+    }
+
     public function test_change_plan_rejects_same_plan(): void
     {
         $data = $this->registerTenant();

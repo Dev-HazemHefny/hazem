@@ -115,7 +115,8 @@ class FinancialReportService
             ->where('jl.account_id', $accountId);
 
         if ($from && $to) {
-            $query->whereBetween('je.entry_date', [$from, $to]);
+            $query->whereDate('je.entry_date', '>=', $from)
+                ->whereDate('je.entry_date', '<=', $to);
         } elseif ($asOf) {
             $query->where('je.entry_date', '<=', $asOf);
         }

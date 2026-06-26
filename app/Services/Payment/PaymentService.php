@@ -47,7 +47,7 @@ class PaymentService
 
                 $invoice = Invoice::where('id', $invoice->id)->lockForUpdate()->firstOrFail();
 
-                if (in_array($invoice->status, [InvoiceStatus::Paid, InvoiceStatus::Void], true)) {
+                if (in_array($invoice->status, [InvoiceStatus::Paid, InvoiceStatus::Void, InvoiceStatus::CreditMemo], true)) {
                     throw new InvoiceNotPayableException($invoice->status->value);
                 }
 
@@ -133,7 +133,11 @@ class PaymentService
         }
 
         $hasOpenInvoices = Invoice::where('subscription_id', $subscription->id)
-            ->whereIn('status', [InvoiceStatus::Open, InvoiceStatus::PartiallyPaid])
+            ->whereIn('status', [
+                InvoiceStatus::Open,
+                InvoiceStatus::PartiallyPaid,
+                InvoiceStatus::Overdue,
+            ])
             ->exists();
 
         if (! $hasOpenInvoices) {

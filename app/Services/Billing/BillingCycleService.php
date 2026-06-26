@@ -19,7 +19,7 @@ class BillingCycleService
     ) {}
 
     /**
-     * Run billing cycle for all due active subscriptions.
+     * Run billing cycle for all due billable subscriptions (active and past_due).
      *
      * @return array{billed: int, skipped: int, failed: int}
      */
@@ -28,12 +28,11 @@ class BillingCycleService
         $asOf ??= CarbonImmutable::now('UTC');
         $stats = ['billed' => 0, 'skipped' => 0, 'failed' => 0];
 
-        $dueSubscriptions = Subscription::where('status', SubscriptionStatus::Active)
+        $dueSubscriptions = Subscription::whereIn('status', [
+            SubscriptionStatus::Active,
+            SubscriptionStatus::PastDue,
+        ])
             ->where('next_billing_at', '<=', $asOf)
-            ->where(function ($query) {
-                $query->where('cancel_at_period_end', false)
-                    ->orWhereNull('cancel_at_period_end');
-            })
             ->get();
 
         foreach ($dueSubscriptions as $subscription) {
@@ -61,27 +60,30 @@ class BillingCycleService
             return DB::transaction(function () use ($subscription) {
                 $subscription = Subscription::where('id', $subscription->id)->lockForUpdate()->firstOrFail();
 
-                if ($subscription->status !== SubscriptionStatus::Active) {
+                if (! in_array($subscription->status, [SubscriptionStatus::Active, SubscriptionStatus::PastDue], true)) {
                     return 'skipped';
                 }
 
-                if ($subscription->cancel_at_period_end) {
-                    $subscription->update([
-                        'status' => SubscriptionStatus::Cancelled,
-                        'auto_renew' => false,
-                    ]);
+                $periodStart = CarbonImmutable::parse($subscription->current_period_start->toDateString());
+                $periodEnd = CarbonImmutable::parse($subscription->current_period_end->toDateString());
 
-                    return 'skipped';
+                if ($subscription->cancel_at_period_end && $subscription->end_date) {
+                    $serviceEnd = CarbonImmutable::parse($subscription->end_date->toDateString());
+
+                    if ($periodStart->gt($serviceEnd)) {
+                        $this->finalizeCancellation($subscription);
+
+                        return 'skipped';
+                    }
                 }
 
-                $idempotencyKey = sprintf(
-                    '%s:%s:%s',
-                    $subscription->id,
-                    $subscription->current_period_start->toDateString(),
-                    $subscription->current_period_end->toDateString(),
-                );
+                $idempotencyKey = $this->billingIdempotencyKey($subscription);
 
-                if (Invoice::where('billing_idempotency_key', $idempotencyKey)->exists()) {
+                if (Invoice::where('billing_idempotency_key', $idempotencyKey)->lockForUpdate()->exists()) {
+                    if ($subscription->cancel_at_period_end) {
+                        $this->finalizeCancellation($subscription);
+                    }
+
                     return 'skipped';
                 }
 
@@ -89,10 +91,16 @@ class BillingCycleService
                 $this->invoiceService->postInvoiceJournalEntry($invoice);
                 $this->invoiceService->createRecognitionSchedules($invoice);
 
+                if ($subscription->cancel_at_period_end) {
+                    $this->finalizeCancellation($subscription);
+
+                    return 'billed';
+                }
+
                 $subscription->load('plan');
                 $nextPeriod = $this->timezoneService->advanceBillingPeriod(
-                    CarbonImmutable::parse($subscription->current_period_end->toDateString()),
-                    $subscription->plan->billing_interval->value,
+                    $periodEnd,
+                    $subscription->billing_interval ?? $subscription->plan->billing_interval->value,
                 );
 
                 $subscription->update([
@@ -113,5 +121,24 @@ class BillingCycleService
         } catch (UniqueConstraintViolationException) {
             return 'skipped';
         }
+    }
+
+    private function billingIdempotencyKey(Subscription $subscription): string
+    {
+        return sprintf(
+            '%s:%s:%s',
+            $subscription->id,
+            $subscription->current_period_start->toDateString(),
+            $subscription->current_period_end->toDateString(),
+        );
+    }
+
+    private function finalizeCancellation(Subscription $subscription): void
+    {
+        $subscription->update([
+            'status' => SubscriptionStatus::Cancelled,
+            'auto_renew' => false,
+            'cancel_at_period_end' => false,
+        ]);
     }
 }

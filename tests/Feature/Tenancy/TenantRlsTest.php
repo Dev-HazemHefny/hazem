@@ -8,6 +8,9 @@ use Illuminate\Support\Str;
 use Tests\Concerns\InteractsWithTenantApi;
 use Tests\TestCase;
 
+/**
+ * @group pgsql-only
+ */
 class TenantRlsTest extends TestCase
 {
     use InteractsWithTenantApi;
@@ -130,6 +133,11 @@ class TenantRlsTest extends TestCase
     protected function tearDown(): void
     {
         \Illuminate\Foundation\Testing\RefreshDatabaseState::$migrated = false;
+
+        config(['database.default' => 'sqlite']);
+        DB::purge('pgsql');
+        DB::purge('pgsql_app');
+        DB::purge('pgsql_migrate');
 
         parent::tearDown();
     }

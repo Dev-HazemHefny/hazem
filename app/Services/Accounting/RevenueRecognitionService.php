@@ -4,6 +4,7 @@ namespace App\Services\Accounting;
 
 use App\DTOs\JournalEntryDraft;
 use App\Enums\RecognitionScheduleStatus;
+use App\Enums\SubscriptionStatus;
 use App\Models\RevenueRecognitionSchedule;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -49,6 +50,25 @@ class RevenueRecognitionService
     }
 
     /**
+     * Cancel pending recognition schedules for a subscription from an effective date forward.
+     */
+    public function cancelPendingSchedulesForSubscription(
+        string $subscriptionId,
+        CarbonImmutable $effectiveDate,
+        bool $cancelAllPending = false,
+    ): int {
+        $query = RevenueRecognitionSchedule::query()
+            ->where('status', RecognitionScheduleStatus::Pending)
+            ->whereHas('invoice', fn ($q) => $q->where('subscription_id', $subscriptionId));
+
+        if (! $cancelAllPending) {
+            $query->where('period_start', '>=', $effectiveDate->toDateString());
+        }
+
+        return $query->update(['status' => RecognitionScheduleStatus::Cancelled]);
+    }
+
+    /**
      * Recognize a single schedule with row lock and idempotency.
      */
     public function recognizeSchedule(RevenueRecognitionSchedule $schedule): string
@@ -61,6 +81,18 @@ class RevenueRecognitionService
 
                 if ($schedule->status !== RecognitionScheduleStatus::Pending) {
                     return 'skipped';
+                }
+
+                $schedule->load('invoice.subscription');
+                $subscription = $schedule->invoice?->subscription;
+
+                if ($subscription && $subscription->status === SubscriptionStatus::Cancelled) {
+                    if ($subscription->cancelled_at
+                        && $schedule->period_start->gt($subscription->cancelled_at->startOfDay())) {
+                        $schedule->update(['status' => RecognitionScheduleStatus::Cancelled]);
+
+                        return 'skipped';
+                    }
                 }
 
                 $tenantId = $schedule->tenant_id;

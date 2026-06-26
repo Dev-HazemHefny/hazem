@@ -13,6 +13,8 @@ class SubscriptionResource extends JsonResource
             'id' => $this->id,
             'customer_id' => $this->customer_id,
             'plan_id' => $this->plan_id,
+            'price_cents' => $this->price_cents,
+            'billing_interval' => $this->billing_interval,
             'status' => $this->status,
             'start_date' => $this->start_date?->toDateString(),
             'end_date' => $this->end_date?->toDateString(),

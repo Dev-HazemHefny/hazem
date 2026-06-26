@@ -19,17 +19,19 @@ class PastDueService
     ) {}
 
     /**
-     * Mark active subscriptions as past_due when open invoices exceed grace period.
-     * Revert past_due subscriptions to active when all invoices are paid or void.
+     * Mark overdue invoices, active subscriptions as past_due when grace expires,
+     * and reactivate past_due subscriptions when all invoices are settled.
      *
-     * @return array{marked_past_due: int, reactivated: int}
+     * @return array{invoices_marked_overdue: int, marked_past_due: int, reactivated: int}
      */
     public function markPastDueSubscriptions(?CarbonImmutable $asOf = null): array
     {
         $tenant = Tenant::find(TenantContext::id());
         $graceDays = $tenant?->gracePeriodDays() ?? 7;
         $asOf ??= $this->timezoneService->now($tenant);
-        $stats = ['marked_past_due' => 0, 'reactivated' => 0];
+        $stats = ['invoices_marked_overdue' => 0, 'marked_past_due' => 0, 'reactivated' => 0];
+
+        $stats['invoices_marked_overdue'] = $this->markOverdueInvoices($graceDays, $asOf);
 
         $activeSubscriptions = Subscription::where('status', SubscriptionStatus::Active)->get();
 
@@ -62,10 +64,31 @@ class PastDueService
         return $stats;
     }
 
+    private function markOverdueInvoices(int $graceDays, CarbonImmutable $asOf): int
+    {
+        $cutoff = $asOf->utc()->subDays($graceDays);
+        $count = 0;
+
+        $invoices = Invoice::whereIn('status', [InvoiceStatus::Open, InvoiceStatus::PartiallyPaid])
+            ->where('due_at', '<', $cutoff)
+            ->get();
+
+        foreach ($invoices as $invoice) {
+            $invoice->update(['status' => InvoiceStatus::Overdue]);
+            $count++;
+        }
+
+        return $count;
+    }
+
     private function shouldMarkPastDue(Subscription $subscription, int $graceDays, CarbonImmutable $asOf): bool
     {
         return Invoice::where('subscription_id', $subscription->id)
-            ->whereIn('status', [InvoiceStatus::Open, InvoiceStatus::PartiallyPaid])
+            ->whereIn('status', [
+                InvoiceStatus::Open,
+                InvoiceStatus::PartiallyPaid,
+                InvoiceStatus::Overdue,
+            ])
             ->where('due_at', '<', $asOf->utc()->subDays($graceDays))
             ->exists();
     }
@@ -73,7 +96,11 @@ class PastDueService
     private function shouldReactivate(Subscription $subscription): bool
     {
         $hasOpenInvoices = Invoice::where('subscription_id', $subscription->id)
-            ->whereIn('status', [InvoiceStatus::Open, InvoiceStatus::PartiallyPaid])
+            ->whereIn('status', [
+                InvoiceStatus::Open,
+                InvoiceStatus::PartiallyPaid,
+                InvoiceStatus::Overdue,
+            ])
             ->exists();
 
         return ! $hasOpenInvoices;

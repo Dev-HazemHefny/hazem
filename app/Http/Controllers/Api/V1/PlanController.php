@@ -42,6 +42,11 @@ class PlanController extends Controller
 
     public function destroy(string $plan, PlanService $service): JsonResponse
     {
-        return ApiResponse::success(new PlanResource($service->deactivate($plan)));
+        $deactivated = $service->deactivate($plan);
+
+        return ApiResponse::success([
+            'plan' => new PlanResource($deactivated),
+            'message' => 'Plan deactivated successfully. Existing subscriptions are unaffected.',
+        ]);
     }
 }

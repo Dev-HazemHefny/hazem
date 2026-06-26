@@ -19,10 +19,7 @@ class AuthService
      */
     public function login(array $credentials): array
     {
-        $tenant = Tenant::query()
-            ->where('slug', $credentials['tenant_slug'])
-            ->where('status', 'active')
-            ->first();
+        $tenant = $this->findActiveTenantBySlug($credentials['tenant_slug']);
 
         if (! $tenant) {
             throw new AuthenticationException();
@@ -92,5 +89,17 @@ class AuthService
         ]);
 
         return $accessToken->getKey().'|'.$plainTextToken;
+    }
+
+    private function findActiveTenantBySlug(string $slug): ?Tenant
+    {
+        $connection = config('database.default') === 'pgsql' ? 'pgsql_migrate' : null;
+
+        $query = $connection ? Tenant::on($connection) : Tenant::query();
+
+        return $query
+            ->where('slug', $slug)
+            ->where('status', 'active')
+            ->first();
     }
 }

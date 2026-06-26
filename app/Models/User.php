@@ -31,6 +31,8 @@ class User extends Authenticatable
         static::addGlobalScope('tenant', function (Builder $builder): void {
             if ($tenantId = TenantContext::id()) {
                 $builder->where('users.tenant_id', $tenantId);
+            } else {
+                $builder->whereRaw('1 = 0');
             }
         });
 

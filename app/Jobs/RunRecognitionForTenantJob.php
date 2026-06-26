@@ -38,7 +38,9 @@ class RunRecognitionForTenantJob implements ShouldQueue
 
             throw $e;
         } finally {
-            DB::disconnect();
+            if (! app()->environment('testing')) {
+                DB::disconnect();
+            }
         }
     }
 }

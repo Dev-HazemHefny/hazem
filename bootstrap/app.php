@@ -5,6 +5,7 @@ use App\Http\Middleware\AddRequestId;
 use App\Http\Middleware\BootstrapTenantFromToken;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsureTenantContext;
+use App\Http\Middleware\SecureHeaders;
 use App\Http\Middleware\VerifyCronSecret;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\AuthenticationException;
@@ -39,10 +40,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->api(prepend: [
             AddRequestId::class,
+            SecureHeaders::class,
         ]);
 
         $middleware->web(prepend: [
             AddRequestId::class,
+            SecureHeaders::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -119,6 +119,22 @@ class AccountingFlowTest extends TestCase
 
             $invoice = Invoice::first();
             $this->assertSame(InvoiceStatus::Open, $invoice->status);
+
+            $report = app(FinancialReportService::class)->incomeStatement('2025-01-01', '2025-01-31');
+            $this->assertSame(50000, $report['subscription_revenue_cents']);
+        });
+    }
+
+    public function test_income_statement_excludes_unrecognized_invoice_amounts(): void
+    {
+        $data = $this->registerTenant();
+        $tenantId = $data['tenant']['id'];
+
+        TenantContext::runAs($tenantId, function () {
+            $this->seedSubscriptionAndBill(50000);
+
+            $beforeRecognition = app(FinancialReportService::class)->incomeStatement('2025-01-01', '2025-01-31');
+            $this->assertSame(0, $beforeRecognition['subscription_revenue_cents']);
         });
     }
 

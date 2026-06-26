@@ -11,7 +11,9 @@ use App\Exceptions\SubscriptionHasOpenInvoicesException;
 use App\Models\Invoice;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Services\Accounting\RevenueRecognitionService;
 use App\Services\Tenancy\TenantTimezoneService;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
@@ -19,6 +21,7 @@ class SubscriptionService
 {
     public function __construct(
         private readonly TenantTimezoneService $timezoneService,
+        private readonly RevenueRecognitionService $revenueRecognitionService,
     ) {}
 
     public function list(array $filters = [], int $perPage = 15): LengthAwarePaginator
@@ -53,6 +56,8 @@ class SubscriptionService
         return Subscription::create([
             'customer_id' => $data['customer_id'],
             'plan_id' => $plan->id,
+            'price_cents' => $plan->price_cents,
+            'billing_interval' => $plan->billing_interval->value,
             'status' => SubscriptionStatus::Active,
             'start_date' => $startDate->toDateString(),
             'end_date' => $data['end_date'] ?? null,
@@ -91,9 +96,15 @@ class SubscriptionService
             $now = now();
 
             if ($cancelAtPeriodEnd) {
+                $serviceEnd = $subscription->end_date
+                    && $subscription->end_date->lte($subscription->current_period_end)
+                    ? $subscription->end_date
+                    : $subscription->current_period_end;
+
                 $subscription->update([
                     'cancel_at_period_end' => true,
                     'cancelled_at' => $now,
+                    'end_date' => $serviceEnd,
                 ]);
             } else {
                 $subscription->update([
@@ -102,6 +113,12 @@ class SubscriptionService
                     'cancelled_at' => $now,
                     'auto_renew' => false,
                 ]);
+
+                $this->revenueRecognitionService->cancelPendingSchedulesForSubscription(
+                    $subscription->id,
+                    CarbonImmutable::today(),
+                    cancelAllPending: true,
+                );
             }
 
             return $subscription->fresh(['customer', 'plan']);
@@ -114,7 +131,11 @@ class SubscriptionService
             $subscription = Subscription::where('id', $subscriptionId)->lockForUpdate()->firstOrFail();
 
             $hasOpenInvoices = Invoice::where('subscription_id', $subscription->id)
-                ->whereIn('status', [InvoiceStatus::Open, InvoiceStatus::PartiallyPaid])
+                ->whereIn('status', [
+                    InvoiceStatus::Open,
+                    InvoiceStatus::PartiallyPaid,
+                    InvoiceStatus::Overdue,
+                ])
                 ->exists();
 
             if ($hasOpenInvoices) {

@@ -11,8 +11,14 @@ class RecognizeSubscriptionRevenueAction
         private readonly RevenueRecognitionService $revenueRecognitionService,
     ) {}
 
-    public function execute(?CarbonImmutable $periodEnd = null): array
+    public function execute(string|\Carbon\CarbonImmutable|null $periodEnd = null): array
     {
-        return $this->revenueRecognitionService->recognizeDueSchedules($periodEnd);
+        $runDate = match (true) {
+            $periodEnd === null => null,
+            $periodEnd instanceof CarbonImmutable => $periodEnd,
+            default => CarbonImmutable::parse($periodEnd),
+        };
+
+        return $this->revenueRecognitionService->recognizeDueSchedules($runDate);
     }
 }

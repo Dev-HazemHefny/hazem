@@ -60,6 +60,8 @@ php artisan migrate --seed
 php artisan serve
 ```
 
+> **Jobs / billing:** `.env.example` sets `QUEUE_CONNECTION=sync` so cron job endpoints run billing and recognition immediately in local/demo setups. In production, use `database` or `redis` and run `php artisan queue:work` plus a scheduler that calls the job HTTP endpoints (or dispatches jobs directly).
+
 ### Demo credentials
 
 ```
@@ -69,10 +71,14 @@ Password: DemoPass123!
 
 ## Live Demo
 
-<!-- Add your hosted deployment URL below when ready -->
-**Demo URL:** _pending — add your link here_
+**Demo URL:** _not hosted — run locally with Docker (see Quick Start)._
 
-There is no hosted public deployment bundled with this repository by default. To run locally:
+This repository is a **local-first prototype**. Production deployment requires:
+
+- PostgreSQL with `app_user` / `migrate_user` roles and RLS
+- `QUEUE_CONNECTION=redis` (or `database`) with a running queue worker
+- A scheduler/cron invoking billing, recognition, and past-due jobs
+- `APP_DEBUG=false`, strong `CRON_SECRET`, and Redis-backed sessions
 
 ```bash
 docker compose up -d

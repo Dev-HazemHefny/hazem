@@ -48,7 +48,8 @@ class TenantTimezoneService
             default => $periodStart->addMonth()->subDay(),
         };
 
-        $nextBillingAt = $periodEnd->addDay()->startOfDay()->utc();
+        // Bill at period start (standard SaaS prepay model).
+        $nextBillingAt = $periodStart->utc();
 
         return [
             'period_start' => $periodStart,

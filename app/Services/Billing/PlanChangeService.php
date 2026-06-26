@@ -79,7 +79,11 @@ class PlanChangeService
             $periodInvoice = $this->findInvoiceCoveringDate($subscription, $effectiveDate);
 
             if (! $periodInvoice) {
-                $subscription->update(['plan_id' => $newPlan->id]);
+                $subscription->update([
+                'plan_id' => $newPlan->id,
+                'price_cents' => $newPlan->price_cents,
+                'billing_interval' => $newPlan->billing_interval->value,
+            ]);
 
                 AuditLog::create([
                     'tenant_id' => $subscription->tenant_id,
@@ -152,7 +156,11 @@ class PlanChangeService
                 $this->invoiceService->postProrationJournalEntry($prorationInvoice);
             }
 
-            $subscription->update(['plan_id' => $newPlan->id]);
+            $subscription->update([
+                'plan_id' => $newPlan->id,
+                'price_cents' => $newPlan->price_cents,
+                'billing_interval' => $newPlan->billing_interval->value,
+            ]);
 
             AuditLog::create([
                 'tenant_id' => $subscription->tenant_id,
