@@ -26,7 +26,7 @@ Controller (Api/V1 or Web)     ← validation via FormRequest, JSON via Resource
 | Namespace | Responsibility |
 |-----------|----------------|
 | `Tenancy/` | Registration, auth, timezone |
-| `Billing/` | Plans, customers, subscriptions, invoices, billing cycle |
+| `Billing/` | Plans, customers, subscriptions, invoices, billing cycle, plan changes |
 | `Payment/` | Payment recording, idempotency, overpayment guard |
 | `Accounting/` | COA, journal entries, revenue recognition |
 | `Subscription/` | Past-due marking |
@@ -39,7 +39,7 @@ Single-purpose classes that delegate to services — used by jobs, seeders, and 
 
 - `RegisterTenantAction`, `RunBillingCycleAction`, `RecordPaymentAction`
 - `RecognizeSubscriptionRevenueAction`, `MarkPastDueSubscriptionsAction`
-- `PostJournalEntryAction`, `ReverseJournalEntryAction`
+- `PostJournalEntryAction`, `ReverseJournalEntryAction`, `ChangeSubscriptionPlanAction`
 
 ### Controllers
 
@@ -69,7 +69,10 @@ Password: DemoPass123!
 
 ## Live Demo
 
-There is no hosted public deployment in this repository. To run a local demo:
+<!-- Add your hosted deployment URL below when ready -->
+**Demo URL:** _pending — add your link here_
+
+There is no hosted public deployment bundled with this repository by default. To run locally:
 
 ```bash
 docker compose up -d
@@ -102,7 +105,7 @@ Base URL: `/api/v1`
 | Auth | `POST /auth/register-tenant`, `/auth/login` (requires `tenant_slug`), `/auth/logout`, `GET /auth/me` |
 | Plans | Full CRUD |
 | Customers | Full CRUD (soft delete) |
-| Subscriptions | Full CRUD (soft delete) + `POST /subscriptions/{id}/cancel`, `POST /subscriptions/{id}/change-plan` (501) |
+| Subscriptions | Full CRUD (soft delete) + `POST /subscriptions/{id}/cancel`, `POST /subscriptions/{id}/change-plan` (mid-cycle proration) |
 | Invoices | List, show |
 | Payments | `POST /invoices/{id}/payments` |
 | Reports | Income statement, balance sheet |
@@ -148,16 +151,16 @@ Coverage includes:
 | Auth | `AuthLoginTest` (tenant-scoped login) |
 | Accounting flow | Invoice journal (AR + deferred), payments (cash + AR), revenue recognition (paid & unpaid), yearly schedules, balanced balance sheet |
 | Payment guards | Idempotency, overpayment rejection, partial payments |
-| Subscription lifecycle | Cancel, delete (soft), open-invoice guard, change-plan returns 501 |
+| Subscription lifecycle | Cancel, delete (soft), open-invoice guard, mid-cycle plan change with proration |
+| Plan change / proration | `PlanChangeTest`, `ProrationCalculatorTest` |
 | Journal draft | Balance assertion unit tests |
 
 `TenantRlsTest` uses `pgsql_migrate` for schema refresh and `app_user` for RLS assertions. It runs automatically in the default suite when PostgreSQL is reachable on `DB_PORT` (default **5433**). **Warning:** RLS tests run `migrate:fresh` on the PostgreSQL database.
 
 ## Out of Scope (MVP)
 
-- **Mid-cycle plan changes / proration** — `POST /subscriptions/{id}/change-plan` returns `501 Not Implemented`
-- Hosted live demo (use local quick start above)
 - Payment gateway integration (manual payment recording only)
+- Cross-interval plan changes (monthly ↔ yearly)
 
 ## Manual job triggers
 

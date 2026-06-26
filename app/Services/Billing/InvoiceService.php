@@ -126,6 +126,125 @@ class InvoiceService
         return $invoice->fresh(['journalEntry']);
     }
 
+    /**
+     * Create a proration invoice for a mid-cycle plan change (positive or negative net amount).
+     *
+     * @param  array<string, mixed>  $proration
+     */
+    public function createProrationInvoice(
+        Subscription $subscription,
+        \App\Models\SubscriptionPlan $oldPlan,
+        \App\Models\SubscriptionPlan $newPlan,
+        array $proration,
+        CarbonImmutable $effectiveDate,
+        string $idempotencyKey,
+    ): ?Invoice {
+        $netAmount = $proration['net_amount_cents'];
+
+        if ($netAmount === 0) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($subscription, $oldPlan, $newPlan, $proration, $effectiveDate, $idempotencyKey, $netAmount) {
+            $existing = Invoice::where('billing_idempotency_key', $idempotencyKey)->first();
+            if ($existing) {
+                return $existing->load('lineItems');
+            }
+
+            $issuedAt = CarbonImmutable::now('UTC');
+            $dueAt = $this->timezoneService->calculateDueAt($issuedAt);
+            $invoiceNumber = $this->allocateInvoiceNumber(TenantContext::id());
+
+            $invoice = Invoice::create([
+                'subscription_id' => $subscription->id,
+                'customer_id' => $subscription->customer_id,
+                'invoice_number' => $invoiceNumber,
+                'status' => InvoiceStatus::Open,
+                'subtotal_cents' => $netAmount,
+                'tax_cents' => 0,
+                'total_cents' => $netAmount,
+                'amount_paid_cents' => 0,
+                'amount_due_cents' => $netAmount,
+                'period_start' => $effectiveDate->toDateString(),
+                'period_end' => $subscription->current_period_end,
+                'issued_at' => $issuedAt,
+                'due_at' => $dueAt,
+                'billing_idempotency_key' => $idempotencyKey,
+            ]);
+
+            InvoiceLineItem::create([
+                'invoice_id' => $invoice->id,
+                'description' => sprintf(
+                    'Plan change proration: %s → %s (%s to %s)',
+                    $oldPlan->name,
+                    $newPlan->name,
+                    $effectiveDate->toDateString(),
+                    $subscription->current_period_end->toDateString(),
+                ),
+                'quantity' => 1,
+                'unit_price_cents' => $netAmount,
+                'amount_cents' => $netAmount,
+                'sort_order' => 0,
+            ]);
+
+            return $invoice->fresh(['lineItems']);
+        });
+    }
+
+    public function postProrationJournalEntry(Invoice $invoice): Invoice
+    {
+        $journalService = app(\App\Services\Accounting\JournalEntryService::class);
+        $coaService = app(\App\Services\Accounting\ChartOfAccountsService::class);
+
+        $tenantId = $invoice->tenant_id;
+        $arAccount = $coaService->findByCode($tenantId, '1100');
+        $deferredAccount = $coaService->findByCode($tenantId, '2100');
+        $amount = abs($invoice->total_cents);
+
+        $lines = $invoice->total_cents >= 0
+            ? [
+                [
+                    'account_id' => $arAccount->id,
+                    'debit_cents' => $amount,
+                    'credit_cents' => 0,
+                    'description' => 'Accounts Receivable — plan change proration',
+                ],
+                [
+                    'account_id' => $deferredAccount->id,
+                    'debit_cents' => 0,
+                    'credit_cents' => $amount,
+                    'description' => 'Deferred Revenue — plan change proration',
+                ],
+            ]
+            : [
+                [
+                    'account_id' => $deferredAccount->id,
+                    'debit_cents' => $amount,
+                    'credit_cents' => 0,
+                    'description' => 'Deferred Revenue — plan change credit',
+                ],
+                [
+                    'account_id' => $arAccount->id,
+                    'debit_cents' => 0,
+                    'credit_cents' => $amount,
+                    'description' => 'Accounts Receivable — plan change credit',
+                ],
+            ];
+
+        $draft = new \App\DTOs\JournalEntryDraft(
+            tenantId: $tenantId,
+            entryDate: $invoice->issued_at->toDateString(),
+            description: "Plan change proration {$invoice->invoice_number}",
+            lines: $lines,
+            idempotencyKey: 'invoice:'.$invoice->id,
+        );
+
+        $entry = $journalService->post($draft);
+        $invoice->update(['journal_entry_id' => $entry->id]);
+
+        return $invoice->fresh(['journalEntry']);
+    }
+
     public function createRecognitionSchedules(Invoice $invoice): array
     {
         $invoice->load(['subscription.plan']);

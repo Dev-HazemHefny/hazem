@@ -89,13 +89,14 @@ class SubscriptionLifecycleTest extends TestCase
             ->assertJsonPath('data.status', 'cancelled');
     }
 
-    public function test_plan_change_returns_not_implemented(): void
+    public function test_change_plan_rejects_same_plan_via_api(): void
     {
         $data = $this->registerTenant();
         $tenantId = $data['tenant']['id'];
         $subscriptionId = null;
+        $planId = null;
 
-        TenantContext::runAs($tenantId, function () use (&$subscriptionId, $tenantId) {
+        TenantContext::runAs($tenantId, function () use (&$subscriptionId, &$planId, $tenantId) {
             $plan = SubscriptionPlan::create([
                 'tenant_id' => $tenantId,
                 'name' => 'Gold',
@@ -103,6 +104,7 @@ class SubscriptionLifecycleTest extends TestCase
                 'billing_interval' => 'monthly',
                 'status' => 'active',
             ]);
+            $planId = $plan->id;
             $customer = Customer::create(['name' => 'Grace', 'email' => 'grace@test.com', 'status' => 'active']);
             $subscription = Subscription::create([
                 'tenant_id' => $tenantId,
@@ -119,10 +121,10 @@ class SubscriptionLifecycleTest extends TestCase
         });
 
         $this->postJson("/api/v1/subscriptions/{$subscriptionId}/change-plan", [
-            'plan_id' => '00000000-0000-0000-0000-000000000099',
+            'plan_id' => $planId,
         ], $this->authHeaders())
-            ->assertStatus(501)
-            ->assertJsonPath('error.code', 'NOT_IMPLEMENTED');
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'SAME_PLAN');
     }
 
     public function test_delete_subscription_soft_deletes_and_cancels(): void

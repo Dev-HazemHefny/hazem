@@ -8,7 +8,7 @@ info:
 
     **Response envelope:** `{ "success": true|false, "data"|"error": ..., "meta": { "request_id": "..." } }`
 
-    **Out of scope (MVP):** Mid-cycle plan changes return `501` on `POST /subscriptions/{id}/change-plan`.
+    **Plan changes:** `POST /subscriptions/{id}/change-plan` applies day-based proration when the current period is already invoiced.
   version: 1.0.0
   contact:
     name: API Support
@@ -651,8 +651,11 @@ paths:
   /subscriptions/{subscription}/change-plan:
     post:
       tags: [Subscriptions]
-      summary: Change plan mid-cycle (not implemented)
-      description: Returns 501 — mid-cycle proration is out of MVP scope.
+      summary: Change plan mid-cycle with proration
+      description: |
+        Switches the subscription to a new active plan with the same billing interval.
+        When the current period is already invoiced, creates a proration invoice (upgrade charge or downgrade credit)
+        and adjusts revenue recognition schedules.
       security:
         - bearerAuth: []
       parameters:
@@ -662,9 +665,26 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_id]
+              properties:
+                plan_id:
+                  type: string
+                  format: uuid
+                effective_date:
+                  type: string
+                  format: date
+                  description: Defaults to today in tenant timezone; must fall within the current billing period.
       responses:
-        '501':
-          description: Not implemented
+        '200':
+          description: Plan changed with proration details
+        '422':
+          description: Same plan, interval mismatch, invalid date, or invalid subscription status
 
   /invoices:
     get:

@@ -250,9 +250,16 @@
           }
         },
         {
-          "name": "Change Plan (501)",
+          "name": "Change Plan",
           "request": {
             "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan_id\": \"{{plan_id}}\",\n  \"effective_date\": \"2025-01-16\"\n}"
+            },
             "url": "{{baseUrl}}/subscriptions/{{subscription_id}}/change-plan"
           }
         }

@@ -135,16 +135,4 @@ class SubscriptionService
             return $subscription;
         });
     }
-
-    /**
-     * Mid-cycle plan change with proration is explicitly out of MVP scope.
-     *
-     * @see SAAS_SUBSCRIPTION_IMPLEMENTATION_PLAN.md §4.4
-     */
-    public function assertPlanChangeNotSupported(): never
-    {
-        throw new \App\Exceptions\NotImplementedException(
-            'Mid-cycle plan changes with proration are not supported in MVP. Cancel the subscription and create a new one.'
-        );
-    }
 }
