@@ -14,12 +14,12 @@ use App\Http\Controllers\Web\ReportController;
 use App\Http\Controllers\Web\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return response()->json([
-        'app' => 'Subscription Management API',
-        'status' => 'running',
-    ]);
-});
+Route::get('/', fn () => response()->json([
+    'app'     => 'SaaS Subscription Management API',
+    'version' => 'v1',
+    'status'  => 'running',
+    'docs'    => url('/api/v1/health'),
+]));
 Route::get('/api/documentation', [DocumentationController::class, 'swagger']);
 Route::get('/api/documentation/openapi.yaml', [DocumentationController::class, 'openapi']);
 Route::get('/docs/postman/collection.json', [DocumentationController::class, 'postman']);
