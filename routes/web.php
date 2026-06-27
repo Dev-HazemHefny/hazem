@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\DocumentationController;
+// use App\Http\Controllers\DocumentationController;
 use App\Http\Controllers\Web\AccountController;
 use App\Http\Controllers\Web\AuthController;
 use App\Http\Controllers\Web\CustomerController;
@@ -20,9 +20,9 @@ Route::get('/', fn () => response()->json([
     'status'  => 'running',
     'docs'    => url('/api/v1/health'),
 ]));
-Route::get('/api/documentation', [DocumentationController::class, 'swagger']);
-Route::get('/api/documentation/openapi.yaml', [DocumentationController::class, 'openapi']);
-Route::get('/docs/postman/collection.json', [DocumentationController::class, 'postman']);
+// Route::get('/api/documentation', [DocumentationController::class, 'swagger']);
+// Route::get('/api/documentation/openapi.yaml', [DocumentationController::class, 'openapi']);
+// Route::get('/docs/postman/collection.json', [DocumentationController::class, 'postman']);
 
 Route::get('/health', HealthController::class);
 
