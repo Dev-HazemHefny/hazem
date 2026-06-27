@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 echo "=== Creating .env file ==="
 cat > /var/www/.env << ENVFILE
@@ -29,7 +28,7 @@ SANCTUM_EXPIRATION=${SANCTUM_EXPIRATION:-1440}
 BCRYPT_ROUNDS=${BCRYPT_ROUNDS:-12}
 ENVFILE
 
-echo "=== Generating app key if missing ==="
+echo "=== Generating app key ==="
 php artisan key:generate --force
 
 echo "=== Creating PostgreSQL roles ==="
@@ -63,7 +62,7 @@ php artisan migrate --force --database=pgsql_migrate
 echo "=== Seeding ==="
 php artisan db:seed --force
 
-echo "=== Clearing all caches ==="
-php artisan optimize:clear
+echo "=== Clearing view cache ==="
+php artisan view:clear
 
 echo "=== Done ==="
