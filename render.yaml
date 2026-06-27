@@ -1,12 +1,9 @@
 services:
   - type: web
     name: saas-subscription-backend
-    runtime: php
+    runtime: docker
     plan: free
-    buildCommand: chmod +x ./build.sh && ./build.sh
-    startCommand: php artisan serve --host=0.0.0.0 --port=$PORT
     healthCheckPath: /api/v1/health
-
     envVars:
       - key: APP_NAME
         value: "SaaS Subscriptions"
@@ -19,46 +16,42 @@ services:
           type: web
           name: saas-subscription-backend
           property: host
-
-      # DB — Render injects DATABASE_URL automatically from the linked DB
       - key: DB_CONNECTION
         value: pgsql
       - key: DB_PORT
         value: "5432"
-      - key: DB_DATABASE
-        fromDatabase:
-          name: saas-subscription-db
-          property: database
+      - key: DB_SSLMODE
+        value: require
       - key: DB_HOST
         fromDatabase:
-          name: saas-subscription-db
+          name: saas-db
           property: host
+      - key: DB_DATABASE
+        fromDatabase:
+          name: saas-db
+          property: database
+      - key: DB_PGSQL_DATABASE
+        fromDatabase:
+          name: saas-db
+          property: database
+      - key: DATABASE_URL
+        fromDatabase:
+          name: saas-db
+          property: connectionString
       - key: DB_USERNAME
         value: app_user
       - key: DB_PASSWORD
-        generateValue: true          # Render generates a random password
-      - key: DB_PGSQL_DATABASE
-        fromDatabase:
-          name: saas-subscription-db
-          property: database
+        generateValue: true
       - key: DB_MIGRATE_USERNAME
         value: migrate_user
       - key: DB_MIGRATE_PASSWORD
         generateValue: true
-      - key: DATABASE_URL           # superuser URL for role bootstrap in build.sh
-        fromDatabase:
-          name: saas-subscription-db
-          property: connectionString
-
-      # Sessions / Cache / Queue — use DB on free tier (no Redis)
       - key: SESSION_DRIVER
         value: database
       - key: CACHE_STORE
         value: database
       - key: QUEUE_CONNECTION
-        value: sync                  # sync = jobs run inline, no worker needed
-
-      # Security
+        value: sync
       - key: APP_KEY
         generateValue: true
       - key: CRON_SECRET
@@ -68,11 +61,7 @@ services:
       - key: SANCTUM_EXPIRATION
         value: "1440"
 
-      - key: DB_SSLMODE
-        value: require
-
 databases:
-  - name: saas-subscription-db
+  - name: saas-db
     plan: free
     databaseName: saas_subscriptions
-    user: postgres                   # superuser — only used in build.sh for role setup
