@@ -63,8 +63,7 @@ php artisan migrate --force --database=pgsql_migrate
 echo "=== Seeding ==="
 php artisan db:seed --force
 
-echo "=== Caching ==="
-php artisan config:clear
-php artisan route:clear
+echo "=== Clearing all caches ==="
+php artisan optimize:clear
 
 echo "=== Done ==="
