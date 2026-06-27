@@ -64,7 +64,7 @@ echo "=== Seeding ==="
 php artisan db:seed --force
 
 echo "=== Caching ==="
-php artisan config:cache
+php artisan config:clear
 php artisan route:clear
 
 echo "=== Done ==="
